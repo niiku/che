@@ -17,7 +17,6 @@ import static org.eclipse.che.selenium.pageobject.dashboard.ProjectSourcePage.Te
 import static org.eclipse.che.selenium.pageobject.dashboard.ProjectSourcePage.Template.WEB_JAVA_SPRING;
 import static org.eclipse.che.selenium.pageobject.dashboard.workspaces.WorkspaceDetails.StateWorkspace.RUNNING;
 import static org.eclipse.che.selenium.pageobject.dashboard.workspaces.WorkspaceDetails.StateWorkspace.STOPPED;
-import static org.eclipse.che.selenium.pageobject.dashboard.workspaces.WorkspaceDetails.WorkspaceDetailsTab.INSTALLERS;
 import static org.eclipse.che.selenium.pageobject.dashboard.workspaces.WorkspaceDetails.WorkspaceDetailsTab.OVERVIEW;
 import static org.eclipse.che.selenium.pageobject.dashboard.workspaces.WorkspaceDetails.WorkspaceDetailsTab.PROJECTS;
 import static org.eclipse.che.selenium.pageobject.dashboard.workspaces.WorkspaceDetails.WorkspaceDetailsTab.SERVERS;
@@ -124,40 +123,6 @@ public class WorkspaceDetailsSingleMachineTest {
     workspaceOverview.waitClipboardWorkspaceJsonFileBtn();
     workspaceOverview.waitDownloadWorkspaceJsonFileBtn();
     workspaceOverview.clickOnHideWorkspaceJsonFileBtn();
-  }
-
-  @Test
-  public void checkWorkingWithInstallers() {
-    workspaceDetails.selectTabInWorkspaceMenu(INSTALLERS);
-
-    // check all needed installers in dev-machine exist
-    workspaceMachines.selectMachine("Workspace Installers", "dev-machine");
-    EXPECTED_INSTALLERS.forEach(
-        (name, value) -> {
-          workspaceInstallers.checkInstallerExists(name);
-        });
-
-    // switch all installers and save changes
-    EXPECTED_INSTALLERS.forEach(
-        (name, value) -> {
-          assertEquals(workspaceInstallers.isInstallerStateTurnedOn(name), value);
-          workspaceInstallers.switchInstallerState(name);
-          WaitUtils.sleepQuietly(1);
-        });
-    clickOnSaveButton();
-
-    // switch all installers, save changes and check its states are as previous(by default for the
-    // Java stack)
-    EXPECTED_INSTALLERS.forEach(
-        (name, value) -> {
-          workspaceInstallers.switchInstallerState(name);
-          loader.waitOnClosed();
-        });
-    clickOnSaveButton();
-    EXPECTED_INSTALLERS.forEach(
-        (name, value) -> {
-          assertEquals(workspaceInstallers.isInstallerStateTurnedOn(name), value);
-        });
   }
 
   @Test
