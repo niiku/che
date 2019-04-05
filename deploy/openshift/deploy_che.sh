@@ -281,7 +281,7 @@ isLoggedIn() {
     exit 1
   else
     CONTEXT=$(${OC_BINARY} whoami -c)
-    OPENSHIFT_ENDPOINT=$(oc whoami -c --show-context=false --show-server=true)
+    OPENSHIFT_ENDPOINT=$(${OC_BINARY} whoami -c --show-context=false --show-server=true)
     printInfo "Active session found. Your current context is: ${CONTEXT}"
   fi
 }
@@ -305,12 +305,12 @@ getTemplates(){
 
 wait_for_postgres() {
     DESIRED_REPLICA_COUNT=1
-    CURRENT_REPLICA_COUNT=$(${OC_BINARY} get dc/postgres -o=jsonpath='{.status.availableReplicas}')
+    CURRENT_REPLICA_COUNT=$(${OC_BINARY} get dc/postgres -n ${CHE_OPENSHIFT_PROJECT} -o=jsonpath='{.status.availableReplicas}')
     DEPLOYMENT_TIMEOUT_SEC=300
     POLLING_INTERVAL_SEC=5
     end=$((SECONDS+DEPLOYMENT_TIMEOUT_SEC))
     while [ "${CURRENT_REPLICA_COUNT}" -ne "${DESIRED_REPLICA_COUNT}" ] && [ ${SECONDS} -lt ${end} ]; do
-      CURRENT_REPLICA_COUNT=$(${OC_BINARY} get dc/postgres -o=jsonpath='{.status.availableReplicas}')
+      CURRENT_REPLICA_COUNT=$(${OC_BINARY} get dc/postgres -n ${CHE_OPENSHIFT_PROJECT} -o=jsonpath='{.status.availableReplicas}')
       timeout_in=$((end-SECONDS))
       printInfo "Deployment is in progress...(Current replica count=${CURRENT_REPLICA_COUNT}, ${timeout_in} seconds remain)"
       sleep ${POLLING_INTERVAL_SEC}
@@ -328,12 +328,12 @@ wait_for_postgres() {
 
 wait_for_keycloak() {
     DESIRED_REPLICA_COUNT=1
-    CURRENT_REPLICA_COUNT=$(${OC_BINARY} get dc/keycloak -o=jsonpath='{.status.availableReplicas}')
+    CURRENT_REPLICA_COUNT=$(${OC_BINARY} get dc/keycloak -n ${CHE_OPENSHIFT_PROJECT} -o=jsonpath='{.status.availableReplicas}')
     DEPLOYMENT_TIMEOUT_SEC=300
     POLLING_INTERVAL_SEC=5
     end=$((SECONDS+DEPLOYMENT_TIMEOUT_SEC))
     while [ "${CURRENT_REPLICA_COUNT}" -ne "${DESIRED_REPLICA_COUNT}" ] && [ ${SECONDS} -lt ${end} ]; do
-      CURRENT_REPLICA_COUNT=$(${OC_BINARY} get dc/keycloak -o=jsonpath='{.status.availableReplicas}')
+      CURRENT_REPLICA_COUNT=$(${OC_BINARY} get dc/keycloak -n ${CHE_OPENSHIFT_PROJECT} -o=jsonpath='{.status.availableReplicas}')
       timeout_in=$((end-SECONDS))
       printInfo "Deployment is in progress...(Current replica count=${CURRENT_REPLICA_COUNT}, ${timeout_in} seconds remain)"
       sleep ${POLLING_INTERVAL_SEC}
@@ -350,14 +350,14 @@ wait_for_keycloak() {
 }
 
 wait_for_che() {
-    CHE_ROUTE=$(oc get route/che -o=jsonpath='{.spec.host}')
+    CHE_ROUTE=$(${OC_BINARY} get route/che -n ${CHE_OPENSHIFT_PROJECT} -o=jsonpath='{.spec.host}')
     DESIRED_REPLICA_COUNT=1
-    CURRENT_REPLICA_COUNT=$(${OC_BINARY} get dc/che -o=jsonpath='{.status.availableReplicas}')
+    CURRENT_REPLICA_COUNT=$(${OC_BINARY} get dc/che -n ${CHE_OPENSHIFT_PROJECT} -o=jsonpath='{.status.availableReplicas}')
     DEPLOYMENT_TIMEOUT_SEC=300
     POLLING_INTERVAL_SEC=5
     end=$((SECONDS+DEPLOYMENT_TIMEOUT_SEC))
     while [ "${CURRENT_REPLICA_COUNT}" -ne "${DESIRED_REPLICA_COUNT}" ] && [ ${SECONDS} -lt ${end} ]; do
-      CURRENT_REPLICA_COUNT=$(${OC_BINARY} get dc/che -o=jsonpath='{.status.availableReplicas}')
+      CURRENT_REPLICA_COUNT=$(${OC_BINARY} get dc/che -n ${CHE_OPENSHIFT_PROJECT} -o=jsonpath='{.status.availableReplicas}')
       timeout_in=$((end-SECONDS))
       printInfo "Deployment is in progress...(Current replica count=${CURRENT_REPLICA_COUNT}, ${timeout_in} seconds remain)"
       sleep ${POLLING_INTERVAL_SEC}
@@ -413,26 +413,26 @@ createNewProject() {
 exposeDebugService() {
 if [ "${CHE_DEBUG_SERVER}" == "true" ]; then
   printInfo "Creating an OS route to debug Che wsmaster..."
-  ${OC_BINARY} create service nodeport che-debug --tcp=8000:8000
-  ${OC_BINARY}  expose service che-debug
-  NodePort=$(oc get service che-debug -o jsonpath='{.spec.ports[0].nodePort}')
+  ${OC_BINARY} create service nodeport che-debug -n ${CHE_OPENSHIFT_PROJECT} --tcp=8000:8000
+  ${OC_BINARY}  expose service -n ${CHE_OPENSHIFT_PROJECT} che-debug
+  NodePort=$(${OC_BINARY} get service che-debug -n ${CHE_OPENSHIFT_PROJECT} -o jsonpath='{.spec.ports[0].nodePort}')
   printInfo "Remote wsmaster debugging URL: ${CLUSTER_IP}:${NodePort}"
   printInfo "Increasing failure threshold for probes of Che deployment"
-  oc set probe dc/che --readiness --liveness --failure-threshold=99999
+  ${OC_BINARY} set probe dc/che -n ${CHE_OPENSHIFT_PROJECT} --readiness --liveness --failure-threshold=99999
 fi
 }
 
 getRoutingSuffix() {
   if [ -z ${OPENSHIFT_ROUTING_SUFFIX+x} ]; then
   printInfo "Computing routing suffix"
-  ${OC_BINARY} create service clusterip test --tcp=80:80 > /dev/null
+  ${OC_BINARY} create service clusterip test -n ${CHE_OPENSHIFT_PROJECT} --tcp=80:80 > /dev/null
   ${OC_BINARY} expose service test > /dev/null
-  ROUTE=$(oc get route test -o=jsonpath='{.spec.host}')
+  ROUTE=$(${OC_BINARY} get route test -n ${CHE_OPENSHIFT_PROJECT} -o=jsonpath='{.spec.host}')
   WORDTOREMOVE="test-${CHE_OPENSHIFT_PROJECT}."
   export OPENSHIFT_ROUTING_SUFFIX="${ROUTE//$WORDTOREMOVE/}"
   printInfo "Routing suffix identified as: ${OPENSHIFT_ROUTING_SUFFIX}"
-  ${OC_BINARY} delete service test > /dev/null
-  ${OC_BINARY} delete route test > /dev/null
+  ${OC_BINARY} delete service test -n ${CHE_OPENSHIFT_PROJECT} > /dev/null
+  ${OC_BINARY} delete route test -n ${CHE_OPENSHIFT_PROJECT} > /dev/null
 fi
 }
 
@@ -440,11 +440,12 @@ deployChePluginRegistry() {
 if [ "${DEPLOY_CHE_PLUGIN_REGISTRY}" == "true" ]; then
   echo "Deploying Che plugin registry..."
   ${OC_BINARY} new-app -f ${BASE_DIR}/templates/che-plugin-registry.yml \
+             -n ${CHE_OPENSHIFT_PROJECT}
              -p IMAGE=${PLUGIN_REGISTRY_IMAGE} \
              -p IMAGE_TAG=${PLUGIN_REGISTRY_IMAGE_TAG} \
              -p PULL_POLICY=${PLUGIN_REGISTRY_IMAGE_PULL_POLICY}
 
-  PLUGIN_REGISTRY_ROUTE=$($OC_BINARY get route/che-plugin-registry --namespace=${CHE_OPENSHIFT_PROJECT} -o=jsonpath={'.spec.host'})
+  PLUGIN_REGISTRY_ROUTE=$($OC_BINARY get route/che-plugin-registry -n ${CHE_OPENSHIFT_PROJECT} -o=jsonpath={'.spec.host'})
   echo "Che plugin registry deployment complete. $PLUGIN_REGISTRY_ROUTE"
 fi
 }
@@ -452,8 +453,8 @@ fi
 deployJaeger(){
     if [ "${CHE_TRACING_ENABLED}" == "true" ]; then
       echo "Deploying Jaeger..."
-      ${OC_BINARY} new-app -f ${BASE_DIR}/templates/jaeger-all-in-one-template.yml
-      JAEGER_ROUTE=$($OC_BINARY get route/jaeger-query --namespace=${CHE_OPENSHIFT_PROJECT} -o=jsonpath={'.spec.host'})
+      ${OC_BINARY} new-app -n ${CHE_OPENSHIFT_PROJECT} -f ${BASE_DIR}/templates/jaeger-all-in-one-template.yml
+      JAEGER_ROUTE=$($OC_BINARY get route/jaeger-query -n ${CHE_OPENSHIFT_PROJECT} -o=jsonpath={'.spec.host'})
       echo "Jaeger deployment complete. $JAEGER_ROUTE"
     fi
 }
@@ -461,9 +462,9 @@ deployJaeger(){
 deployMetrics(){
     if [ "${CHE_METRICS_ENABLED}" == "true" ]; then
       echo "Deploying Grafana and Prometheus..."
-      ${OC_BINARY} new-app -f ${BASE_DIR}/templates/che-monitoring.yaml
-      echo "Grafana deployment complete. $($OC_BINARY get route/grafana --namespace=${CHE_OPENSHIFT_PROJECT} -o=jsonpath={'.spec.host'})"
-      echo "Prometheus deployment complete. $($OC_BINARY get route/prometheus --namespace=${CHE_OPENSHIFT_PROJECT} -o=jsonpath={'.spec.host'})"
+      ${OC_BINARY} new-app -n ${CHE_OPENSHIFT_PROJECT} -f ${BASE_DIR}/templates/che-monitoring.yaml
+      echo "Grafana deployment complete. $($OC_BINARY get route/grafana -n ${CHE_OPENSHIFT_PROJECT} -o=jsonpath={'.spec.host'})"
+      echo "Prometheus deployment complete. $($OC_BINARY get route/prometheus -n ${CHE_OPENSHIFT_PROJECT} -o=jsonpath={'.spec.host'})"
     fi
 }
 
@@ -498,7 +499,7 @@ ${CHE_VAR_ARRAY}"
       if [ "${CHE_KEYCLOAK_ADMIN_REQUIRE_UPDATE_PASSWORD}" == "false" ]; then
         export KEYCLOAK_PARAM="-p CHE_KEYCLOAK_ADMIN_REQUIRE_UPDATE_PASSWORD=false"
       fi
-      ${OC_BINARY} new-app -f ${BASE_DIR}/templates/multi/postgres-template.yaml \
+      ${OC_BINARY} new-app -n ${CHE_OPENSHIFT_PROJECT} -f ${BASE_DIR}/templates/multi/postgres-template.yaml \
         -p POSTGRESQL_LOG_DEBUG=${POSTGRESQL_LOG_DEBUG}
       wait_for_postgres
 
@@ -511,10 +512,11 @@ ${CHE_VAR_ARRAY}"
           OPENSHIFT_CERT="$(cat $OPENSHIFT_CERT_PATH)"
         fi
 
-        $OC_BINARY new-app -f ${BASE_DIR}/templates/multi/openshift-certificate-secret.yaml -p CERTIFICATE="$OPENSHIFT_CERT"
+        $OC_BINARY new-app -n ${CHE_OPENSHIFT_PROJECT} -f ${BASE_DIR}/templates/multi/openshift-certificate-secret.yaml -p CERTIFICATE="$OPENSHIFT_CERT"
       fi
 
-      ${OC_BINARY} new-app -f ${BASE_DIR}/templates/multi/keycloak-template.yaml \
+      ${OC_BINARY} new-app -n ${CHE_OPENSHIFT_PROJECT} \
+        -f ${BASE_DIR}/templates/multi/keycloak-template.yaml \
         -p ROUTING_SUFFIX=${OPENSHIFT_ROUTING_SUFFIX} \
         -p PROTOCOL=${HTTP_PROTOCOL} \
         -p KEYCLOAK_USER=${KEYCLOAK_USER} \
@@ -530,19 +532,21 @@ ${CHE_VAR_ARRAY}"
         # register oAuth client in OpenShift
         printInfo "Logging as \"system:admin\""
         $OC_BINARY login -u "system:admin"
-        KEYCLOAK_ROUTE=$($OC_BINARY get route/keycloak --namespace=${CHE_OPENSHIFT_PROJECT} -o=jsonpath={'.spec.host'})
+        KEYCLOAK_ROUTE=$($OC_BINARY get route/keycloak -n ${CHE_OPENSHIFT_PROJECT} -o=jsonpath={'.spec.host'})
 
-        $OC_BINARY process -f ${BASE_DIR}/templates/multi/oauth-client.yaml \
+        $OC_BINARY process -n ${CHE_OPENSHIFT_PROJECT} 
+          -f ${BASE_DIR}/templates/multi/oauth-client.yaml \
           -p REDIRECT_URI="${HTTP_PROTOCOL}://${KEYCLOAK_ROUTE}/auth/realms/che/broker/${OCP_IDENTITY_PROVIDER_ID}/endpoint" \
           -p OCP_OAUTH_CLIENT_ID=${OCP_OAUTH_CLIENT_ID} \
-          -p OCP_OAUTH_CLIENT_SECRET=${OCP_OAUTH_CLIENT_SECRET} | oc apply -f -
+          -p OCP_OAUTH_CLIENT_SECRET=${OCP_OAUTH_CLIENT_SECRET} | ${OC_BINARY} apply -n ${CHE_OPENSHIFT_PROJECT} -f -
 
         # register OpenShift Identity Provider in Keycloak
         printInfo "Registering oAuth client in Keycloak"
         printInfo "Logging as \"${OPENSHIFT_USERNAME}\""
         $OC_BINARY login -u "${OPENSHIFT_USERNAME}" -p "${OPENSHIFT_PASSWORD}"
-        KEYCLOAK_POD_NAME=$(${OC_BINARY} get pod --namespace=${CHE_OPENSHIFT_PROJECT} -l app=keycloak --no-headers | awk '{print $1}')
+        KEYCLOAK_POD_NAME=$(${OC_BINARY} get pod -n ${CHE_OPENSHIFT_PROJECT} -l app=keycloak --no-headers | awk '{print $1}')
         ${OC_BINARY} exec ${KEYCLOAK_POD_NAME} -- /opt/jboss/keycloak/bin/kcadm.sh create identity-provider/instances -r che \
+          -n ${CHE_OPENSHIFT_PROJECT} \
           -s alias=${OCP_IDENTITY_PROVIDER_ID} \
           -s providerId=${OCP_IDENTITY_PROVIDER_ID} \
           -s enabled=true \
@@ -562,19 +566,21 @@ ${CHE_VAR_ARRAY}"
     fi
 
     if [ "${DEPLOY_CHE_PLUGIN_REGISTRY}" == "true" ]; then
-        PLUGIN_REGISTRY_ROUTE=$($OC_BINARY get route/che-plugin-registry --namespace=${CHE_OPENSHIFT_PROJECT} -o=jsonpath={'.spec.host'})
+        PLUGIN_REGISTRY_ROUTE=$($OC_BINARY get route/che-plugin-registry -n ${CHE_OPENSHIFT_PROJECT} -o=jsonpath={'.spec.host'})
         PLUGIN__REGISTRY__URL="${HTTP_PROTOCOL}://${PLUGIN_REGISTRY_ROUTE}"
     fi
 
     if [ ! -z ${CHE_INFRA_OPENSHIFT_PROJECT} ]; then
         # create workspace service account in the predefined workspace
-        ${OC_BINARY} new-app -f ${BASE_DIR}/templates/che-workspace-service-account.yaml \
+        ${OC_BINARY} new-app -n ${CHE_OPENSHIFT_PROJECT} \
+          -f ${BASE_DIR}/templates/che-workspace-service-account.yaml \
           -p SERVICE_ACCOUNT_NAME='che-workspace' \
           -p SERVICE_ACCOUNT_NAMESPACE=${CHE_INFRA_OPENSHIFT_PROJECT}
     fi
     WORKSPACE_SERVICE_ACCOUNT_NAME="che-workspace"
 
-    ${OC_BINARY} new-app -f ${BASE_DIR}/templates/che-server-template.yaml \
+    ${OC_BINARY} new-app -n ${CHE_OPENSHIFT_PROJECT} \
+                         -f ${BASE_DIR}/templates/che-server-template.yaml \
                          -p ROUTING_SUFFIX=${OPENSHIFT_ROUTING_SUFFIX} \
                          -p IMAGE_CHE=${CHE_IMAGE_REPO} \
                          -p CHE_VERSION=${CHE_IMAGE_TAG} \
@@ -594,17 +600,17 @@ ${CHE_VAR_ARRAY}"
                          ${ENV}
 
     if [ ${UPDATE_STRATEGY} == "Recreate" ]; then
-      ${OC_BINARY} apply -f ${BASE_DIR}/templates/pvc/che-server-pvc.yaml
-      ${OC_BINARY} set volume dc/che --add -m "/data" --name=che-data-volume --claim-name=che-data-volume
+      ${OC_BINARY} apply -n ${CHE_OPENSHIFT_PROJECT} -f ${BASE_DIR}/templates/pvc/che-server-pvc.yaml 
+      ${OC_BINARY} set volume dc/che -n ${CHE_OPENSHIFT_PROJECT} --add -m "/data" --name=che-data-volume --claim-name=che-data-volume
     fi
 
     if [ "${ENABLE_SSL}" == "true" ]; then
-      ${OC_BINARY} apply -f ${BASE_DIR}/templates/https/che-route-tls.yaml
+      ${OC_BINARY} apply -n ${CHE_OPENSHIFT_PROJECT} -f ${BASE_DIR}/templates/https/che-route-tls.yaml
       if [ "${CHE_MULTIUSER}" == "true" ]; then
-        ${OC_BINARY} apply -f ${BASE_DIR}/templates/https/keycloak-route-tls.yaml
+        ${OC_BINARY} apply -n ${CHE_OPENSHIFT_PROJECT} -f ${BASE_DIR}/templates/https/keycloak-route-tls.yaml
       fi
     fi
-    CHE_ROUTE=$(oc get route/che -o=jsonpath='{.spec.host}')
+    CHE_ROUTE=$(${OC_BINARY} get route/che -n ${CHE_OPENSHIFT_PROJECT} -o=jsonpath='{.spec.host}')
     exposeDebugService
     if [ "${WAIT_FOR_CHE}" == "true" ]; then
       wait_for_che
